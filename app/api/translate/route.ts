@@ -18,6 +18,11 @@ type Block = {
   source: string;
   translation: string;
   box_2d: number[];
+  background_color?: string;
+  text_color?: string;
+  font_weight?: "normal" | "bold";
+  align?: "left" | "center" | "right";
+  font_scale?: number;
 };
 
 type PageResult = {
@@ -50,6 +55,11 @@ function parseGeminiJson(text: string): Layout {
             box_2d: Array.isArray(block.box_2d)
               ? block.box_2d.map(Number)
               : [],
+            background_color: typeof block.background_color === "string" ? block.background_color : undefined,
+            text_color: typeof block.text_color === "string" ? block.text_color : undefined,
+            font_weight: block.font_weight === "bold" ? "bold" : "normal",
+            align: block.align === "center" || block.align === "right" ? block.align : "left",
+            font_scale: Number.isFinite(Number(block.font_scale)) ? Number(block.font_scale) : 1,
           }))
           .filter((block: Block) =>
             block.box_2d.length === 4 &&
@@ -348,7 +358,15 @@ IMPORTANT:
 - If a page has no readable text, return an empty blocks array.
 - Do not invent text.
 - Do not use Markdown fences.
-- Output valid JSON only.`;
+- Output valid JSON only.
+
+For EVERY text block also analyze the visual style of the ORIGINAL text area and return:
+- "background_color": the dominant bubble/panel background color as a 6-digit hex color, e.g. "#FFFFFF", "#000000", "#D9D9D9". If the area is clearly black/dark, use the actual dark color.
+- "text_color": the intended text color as a 6-digit hex color, normally "#FFFFFF" on dark bubbles and "#111111" on light bubbles.
+- "font_weight": "bold" only when the original lettering is clearly bold/heavy; otherwise "normal".
+- "align": "center" for centered speech bubbles, "right" for right-aligned text, otherwise "left".
+- "font_scale": a number from 0.75 to 1.35 that estimates the original lettering size relative to the detected box. Use larger values for titles/shouts and smaller values for dense dialogue.
+IMPORTANT: A black speech bubble with white lettering MUST stay black with white translated lettering. Do not default every block to a white background.`;
 
     const raw = await fetchGemini(apiKey, pdfBase64, prompt);
     const layout = parseGeminiJson(raw);
