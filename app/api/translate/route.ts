@@ -6,13 +6,13 @@ export const maxDuration = 60;
 
 const BUCKET = "manga-files";
 const GEMINI_MODELS = [
-  "gemini-3.8-flash",
-  "gemini-3.7-flash",
-  "gemini-3.6-flash",
+  "gemini-2.5-flash",
+  "gemini-2.5-flash-lite",
 ] as const;
+const OPENAI_MODEL = "gpt-5-mini";
 const MAX_PAGES_PER_BATCH = 2;
-const GEMINI_ATTEMPT_TIMEOUT_MS = 15_000;
-const GEMINI_RETRY_DELAY_MS = 2_000;
+const GEMINI_ATTEMPT_TIMEOUT_MS = 25_000;
+const OPENAI_ATTEMPT_TIMEOUT_MS = 25_000;
 
 type Block = {
   source: string;
@@ -170,52 +170,209 @@ async function fetchGeminiOnce(
   }
 }
 
-async function fetchGemini(
+async function fetchGeminiOnce(
   apiKey: string,
+  model: string,
+  pdfBase64: string,
+  prompt: string,
+  timeoutMs: number,
+) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
+        body: JSON.stringify({
+          contents: [{
+            role: "user",
+            parts: [
+              { text: prompt },
+              {
+                inlineData: {
+                  mimeType: "application/pdf",
+                  data: pdfBase64,
+                },
+              },
+            ],
+          }],
+          generationConfig: {
+            temperature: 0.1,
+            responseMimeType: "application/json",
+          },
+        }),
+      },
+    );
+
+    const data = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      const message =
+        data?.error?.message ||
+        data?.error?.status ||
+        `Gemini API HTTP ${response.status}`;
+      const error = new Error(message);
+      (error as Error & { status?: number; retryable?: boolean }).status = response.status;
+      (error as Error & { status?: number; retryable?: boolean }).retryable =
+        isTransientGeminiError(response.status, message);
+      throw error;
+    }
+
+    const text = data?.candidates?.[0]?.content?.parts
+      ?.map((part: { text?: string }) => part.text || "")
+      .join("")
+      .trim();
+
+    if (!text) {
+      throw new Error("Gemini javobida tarjima topilmadi.");
+    }
+
+    return text;
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      const timeoutError = new Error(
+        `Gemini ${model} javobi ${Math.round(timeoutMs / 1000)} soniyada kelmadi.`,
+      );
+      (timeoutError as Error & { retryable?: boolean }).retryable = true;
+      throw timeoutError;
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fetchOpenAIOnce(
+  apiKey: string,
+  pdfBase64: string,
+  prompt: string,
+  timeoutMs: number,
+) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      signal: controller.signal,
+      body: JSON.stringify({
+        model: OPENAI_MODEL,
+        input: [{
+          role: "user",
+          content: [
+            { type: "input_text", text: prompt },
+            {
+              type: "input_file",
+              filename: "manga-batch.pdf",
+              file_data: `data:application/pdf;base64,${pdfBase64}`,
+            },
+          ],
+        }],
+        temperature: 0.1,
+      }),
+    });
+
+    const data = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      const message =
+        data?.error?.message ||
+        data?.error?.code ||
+        `OpenAI API HTTP ${response.status}`;
+      const error = new Error(message);
+      (error as Error & { retryable?: boolean }).retryable =
+        response.status === 408 ||
+        response.status === 409 ||
+        response.status === 429 ||
+        response.status >= 500;
+      throw error;
+    }
+
+    const text =
+      typeof data?.output_text === "string"
+        ? data.output_text.trim()
+        : Array.isArray(data?.output)
+          ? data.output
+              .flatMap((item: any) => Array.isArray(item?.content) ? item.content : [])
+              .map((part: any) => part?.text || "")
+              .join("")
+              .trim()
+          : "";
+
+    if (!text) {
+      throw new Error("OpenAI javobida tarjima topilmadi.");
+    }
+
+    return text;
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      const timeoutError = new Error(
+        `OpenAI ${OPENAI_MODEL} javobi ${Math.round(timeoutMs / 1000)} soniyada kelmadi.`,
+      );
+      (timeoutError as Error & { retryable?: boolean }).retryable = true;
+      throw timeoutError;
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fetchTranslation(
+  geminiApiKey: string | undefined,
+  openaiApiKey: string | undefined,
   pdfBase64: string,
   prompt: string,
 ) {
   const failures: string[] = [];
 
-  for (let index = 0; index < GEMINI_MODELS.length; index += 1) {
-    const model = GEMINI_MODELS[index];
-    const attempts = index === 0 ? 2 : 1;
-
-    for (let attempt = 0; attempt < attempts; attempt += 1) {
-      const timeoutMs = attempt === 0 && index === 0 ? 15_000 : 10_000;
-
+  if (geminiApiKey) {
+    for (const model of GEMINI_MODELS) {
       try {
         return await fetchGeminiOnce(
-          apiKey,
+          geminiApiKey,
           model,
           pdfBase64,
           prompt,
-          timeoutMs,
+          GEMINI_ATTEMPT_TIMEOUT_MS,
         );
       } catch (error) {
         const message = error instanceof Error ? error.message : "Unknown Gemini error";
-        const retryable = error instanceof Error
-          ? Boolean((error as Error & { retryable?: boolean }).retryable)
-          : false;
-
-        failures.push(`${model} (attempt ${attempt + 1}): ${message}`);
-
-        if (!retryable) {
-          throw error;
-        }
-
-        const hasAnotherAttempt = attempt + 1 < attempts;
-        const hasAnotherModel = index + 1 < GEMINI_MODELS.length;
-
-        if (hasAnotherAttempt || hasAnotherModel) {
-          await sleep(GEMINI_RETRY_DELAY_MS);
-        }
+        failures.push(`Gemini ${model}: ${message}`);
+        // Quota/rate-limit errors should immediately move to the next provider.
+        // Retrying the same exhausted quota does not increase the quota.
       }
     }
+  } else {
+    failures.push("Gemini: GEMINI_API_KEY mavjud emas.");
+  }
+
+  if (openaiApiKey) {
+    try {
+      return await fetchOpenAIOnce(
+        openaiApiKey,
+        pdfBase64,
+        prompt,
+        OPENAI_ATTEMPT_TIMEOUT_MS,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown OpenAI error";
+      failures.push(`OpenAI ${OPENAI_MODEL}: ${message}`);
+    }
+  } else {
+    failures.push("OpenAI: OPENAI_API_KEY mavjud emas.");
   }
 
   throw new Error(
-    `Gemini barcha retry va fallback modellarida vaqtinchalik xatoga uchradi. ${failures.join(" | ")}`,
+    `Barcha AI providerlar ishlamadi. ${failures.join(" | ")}`,
   );
 }
 
@@ -235,10 +392,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Noto'g'ri jobId yoki path" }, { status: 400 });
     }
 
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
+    const geminiApiKey = process.env.GEMINI_API_KEY;
+    const openaiApiKey = process.env.OPENAI_API_KEY;
+
+    if (!geminiApiKey && !openaiApiKey) {
       return NextResponse.json({
-        error: "GEMINI_API_KEY Vercel Environment Variables'da topilmadi.",
+        error: "AI API key topilmadi. GEMINI_API_KEY yoki OPENAI_API_KEY Vercel Environment Variables'da kerak.",
       }, { status: 500 });
     }
 
@@ -368,7 +527,12 @@ For EVERY text block also analyze the visual style of the ORIGINAL text area and
 - "font_scale": a number from 0.75 to 1.35 that estimates the original lettering size relative to the detected box. Use larger values for titles/shouts and smaller values for dense dialogue.
 IMPORTANT: A black speech bubble with white lettering MUST stay black with white translated lettering. Do not default every block to a white background.`;
 
-    const raw = await fetchGemini(apiKey, pdfBase64, prompt);
+    const raw = await fetchTranslation(
+      geminiApiKey,
+      openaiApiKey,
+      pdfBase64,
+      prompt,
+    );
     const layout = parseGeminiJson(raw);
 
     const normalizedPages = layout.pages.filter((page) =>
