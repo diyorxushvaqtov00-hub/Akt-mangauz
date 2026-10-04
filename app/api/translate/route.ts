@@ -47,7 +47,6 @@ function parseGeminiJson(text: string): Layout {
               : [],
           }))
           .filter((block: Block) =>
-            Number.isFinite(Number(block.page)) === false &&
             block.box_2d.length === 4 &&
             block.box_2d.every(Number.isFinite),
           )
