@@ -16,14 +16,25 @@ const GEMINI_ATTEMPT_TIMEOUT_MS = 15_000;
 const OPENAI_ATTEMPT_TIMEOUT_MS = 20_000;
 
 type Block = {
+  id?: string;
+  type?: "dialogue" | "thought" | "narration" | "shout" | "sfx" | "sign" | "background" | "vertical" | "rotated" | "unknown";
   source: string;
   translation: string;
   box_2d: number[];
+  polygon_2d?: number[][];
   background_color?: string;
   text_color?: string;
   font_weight?: "normal" | "bold";
   align?: "left" | "center" | "right";
   font_scale?: number;
+  rotation?: number;
+  font_class?: "sans" | "sans_bold" | "serif" | "serif_bold" | "handwritten" | "manga" | "impact" | "condensed" | "decorative" | "unknown";
+  stroke_color?: string;
+  stroke_width?: number;
+  shadow_color?: string;
+  shadow_opacity?: number;
+  line_spacing?: number;
+  confidence?: number;
 };
 
 type PageResult = {
@@ -51,16 +62,36 @@ function parseGeminiJson(text: string): Layout {
     blocks: Array.isArray(page.blocks)
       ? page.blocks
           .map((block: any) => ({
+            id: typeof block.id === "string" ? block.id : undefined,
+            type: ["dialogue","thought","narration","shout","sfx","sign","background","vertical","rotated","unknown"].includes(block.type)
+              ? block.type
+              : "unknown",
             source: String(block.source || ""),
             translation: String(block.translation || ""),
             box_2d: Array.isArray(block.box_2d)
               ? block.box_2d.map(Number)
               : [],
+            polygon_2d: Array.isArray(block.polygon_2d)
+              ? block.polygon_2d
+                  .filter((point: any) => Array.isArray(point) && point.length === 2)
+                  .map((point: any) => [Number(point[0]), Number(point[1])])
+                  .filter((point: number[]) => point.every(Number.isFinite))
+              : undefined,
             background_color: typeof block.background_color === "string" ? block.background_color : undefined,
             text_color: typeof block.text_color === "string" ? block.text_color : undefined,
             font_weight: block.font_weight === "bold" ? "bold" : "normal",
             align: block.align === "center" || block.align === "right" ? block.align : "left",
             font_scale: Number.isFinite(Number(block.font_scale)) ? Number(block.font_scale) : 1,
+            rotation: Number.isFinite(Number(block.rotation)) ? Number(block.rotation) : 0,
+            font_class: ["sans","sans_bold","serif","serif_bold","handwritten","manga","impact","condensed","decorative","unknown"].includes(block.font_class)
+              ? block.font_class
+              : "unknown",
+            stroke_color: typeof block.stroke_color === "string" ? block.stroke_color : undefined,
+            stroke_width: Number.isFinite(Number(block.stroke_width)) ? Number(block.stroke_width) : 0,
+            shadow_color: typeof block.shadow_color === "string" ? block.shadow_color : undefined,
+            shadow_opacity: Number.isFinite(Number(block.shadow_opacity)) ? Number(block.shadow_opacity) : 0,
+            line_spacing: Number.isFinite(Number(block.line_spacing)) ? Number(block.line_spacing) : 1.15,
+            confidence: Number.isFinite(Number(block.confidence)) ? Number(block.confidence) : 0.8,
           }))
           .filter((block: Block) =>
             block.box_2d.length === 4 &&
@@ -421,9 +452,25 @@ Return ONLY valid JSON matching this exact shape:
       "page": 1,
       "blocks": [
         {
+          "id": "stable-page-local-id",
+          "type": "dialogue|thought|narration|shout|sfx|sign|background|vertical|rotated|unknown",
           "source": "original text",
           "translation": "Uzbek translation",
-          "box_2d": [ymin, xmin, ymax, xmax]
+          "box_2d": [ymin, xmin, ymax, xmax],
+          "polygon_2d": [[y,x],[y,x],[y,x],[y,x]],
+          "background_color": "#FFFFFF",
+          "text_color": "#111111",
+          "font_weight": "normal",
+          "align": "center",
+          "font_scale": 1.0,
+          "rotation": 0,
+          "font_class": "sans",
+          "stroke_color": "#000000",
+          "stroke_width": 0,
+          "shadow_color": "#000000",
+          "shadow_opacity": 0,
+          "line_spacing": 1.15,
+          "confidence": 0.95
         }
       ]
     }
@@ -433,12 +480,15 @@ Return ONLY valid JSON matching this exact shape:
 IMPORTANT:
 - "page" must be the ORIGINAL PDF page number, from ${startPage} to ${endPage}.
 - box_2d uses 0-1000 normalized coordinates: [top, left, bottom, right].
-- Detect every readable dialogue/caption/text block.
+- Detect every readable dialogue, thought, narration, SFX, sign, background, vertical, and rotated text block.
+- Return a tight polygon_2d around the actual lettering when possible, plus a conservative box_2d around it.
+- Classify every block using type.
 - Translate actual text; do not summarize.
 - Preserve names, terminology, tone, honorific meaning, and sound-effect meaning.
 - Keep separate text blocks separate.
 - If a page has no readable text, return an empty blocks array.
 - Do not invent text.
+- SFX must be classified as sfx and translated as a sound effect, not as ordinary dialogue.
 - Do not use Markdown fences.
 - Output valid JSON only.
 
@@ -448,6 +498,12 @@ For EVERY text block also analyze the visual style of the ORIGINAL text area and
 - "font_weight": "bold" only when the original lettering is clearly bold/heavy; otherwise "normal".
 - "align": "center" for centered speech bubbles, "right" for right-aligned text, otherwise "left".
 - "font_scale": a number from 0.75 to 1.35 that estimates the original lettering size relative to the detected box. Use larger values for titles/shouts and smaller values for dense dialogue.
+- "rotation": approximate text rotation in degrees, normally between -90 and 90.
+- "font_class": choose the closest visual class: sans, sans_bold, serif, serif_bold, handwritten, manga, impact, condensed, decorative, unknown.
+- "stroke_color" and "stroke_width": detect outline around letters. Use 0 when none.
+- "shadow_color" and "shadow_opacity": detect a visible shadow. Use 0 opacity when none.
+- "line_spacing": approximate line spacing multiplier, normally 1.0 to 1.4.
+- "confidence": confidence from 0 to 1 for the block detection/style metadata.
 IMPORTANT: A black speech bubble with white lettering MUST stay black with white translated lettering. Do not default every block to a white background.`;
 
     const raw = await fetchTranslation(
