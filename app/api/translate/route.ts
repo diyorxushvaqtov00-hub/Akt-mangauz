@@ -169,38 +169,43 @@ async function fetchGemini(
 
   for (let index = 0; index < GEMINI_MODELS.length; index += 1) {
     const model = GEMINI_MODELS[index];
-    const timeoutMs = index === 0
-      ? GEMINI_ATTEMPT_TIMEOUT_MS
-      : 10_000;
+    const attempts = index === 0 ? 2 : 1;
 
-    try {
-      return await fetchGeminiOnce(
-        apiKey,
-        model,
-        pdfBase64,
-        prompt,
-        timeoutMs,
-      );
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Unknown Gemini error";
-      const retryable = error instanceof Error
-        ? Boolean((error as Error & { retryable?: boolean }).retryable)
-        : false;
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      const timeoutMs = attempt === 0 && index === 0 ? 15_000 : 10_000;
 
-      failures.push(`${model}: ${message}`);
+      try {
+        return await fetchGeminiOnce(
+          apiKey,
+          model,
+          pdfBase64,
+          prompt,
+          timeoutMs,
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unknown Gemini error";
+        const retryable = error instanceof Error
+          ? Boolean((error as Error & { retryable?: boolean }).retryable)
+          : false;
 
-      if (!retryable) {
-        throw error;
-      }
+        failures.push(`${model} (attempt ${attempt + 1}): ${message}`);
 
-      if (index < GEMINI_MODELS.length - 1) {
-        await sleep(GEMINI_RETRY_DELAY_MS);
+        if (!retryable) {
+          throw error;
+        }
+
+        const hasAnotherAttempt = attempt + 1 < attempts;
+        const hasAnotherModel = index + 1 < GEMINI_MODELS.length;
+
+        if (hasAnotherAttempt || hasAnotherModel) {
+          await sleep(GEMINI_RETRY_DELAY_MS);
+        }
       }
     }
   }
 
   throw new Error(
-    `Gemini barcha fallback modellarida vaqtinchalik xatoga uchradi. ${failures.join(" | ")}`,
+    `Gemini barcha retry va fallback modellarida vaqtinchalik xatoga uchradi. ${failures.join(" | ")}`,
   );
 }
 
