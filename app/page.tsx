@@ -182,13 +182,55 @@ async function renderPdfPages(file: File) {
   return pages;
 }
 
+async function createCleanupMask(image: string, blocks: Block[]) {
+  const source = await loadImage(image);
+  const canvas = document.createElement("canvas");
+  canvas.width = source.naturalWidth || source.width;
+  canvas.height = source.naturalHeight || source.height;
+
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Cleanup mask canvas yaratilmadi.");
+
+  ctx.fillStyle = "#000000";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = "#ffffff";
+
+  for (const block of blocks) {
+    if (!Array.isArray(block.box_2d) || block.box_2d.length !== 4) continue;
+    const [top, left, bottom, right] = block.box_2d.map(Number);
+    if (![top, left, bottom, right].every(Number.isFinite)) continue;
+
+    const points = Array.isArray(block.polygon_2d) && block.polygon_2d.length >= 3
+      ? block.polygon_2d
+      : [
+          [top, left],
+          [top, right],
+          [bottom, right],
+          [bottom, left],
+        ];
+
+    ctx.beginPath();
+    points.forEach(([py, px], index) => {
+      const x = clamp(Number(px) / 1000, 0, 1) * canvas.width;
+      const y = clamp(Number(py) / 1000, 0, 1) * canvas.height;
+      if (index === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  return canvas.toDataURL("image/png");
+}
+
 async function cleanupPage(image: string, blocks: Block[]) {
   if (!blocks.length) return { image, usedAI: false };
 
+  const mask = await createCleanupMask(image, blocks);
   const response = await fetch("/api/clean-page", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ image, blocks }),
+    body: JSON.stringify({ image, mask, blocks }),
   });
 
   const result = await readResponse(response);
@@ -495,36 +537,41 @@ export default function Home() {
         compress: true,
       });
 
-      let warningCount = 0;
-
       for (let index = 0; index < pageImages.length; index += 1) {
         const pageNumber = index + 1;
         setStatus(`Sahifa ${pageNumber}/${pageImages.length}: original matn tozalanmoqda...`);
         setProgress(72 + Math.round((index / Math.max(1, pageImages.length)) * 24));
 
-        const original = await loadImage(pageImages[index]);
         const blocks = pageMap.get(pageNumber)?.blocks || [];
 
         let cleanData = pageImages[index];
-        let cleanupFailed = false;
 
         if (blocks.length) {
-          try {
-            const cleaned = await cleanupPage(pageImages[index], blocks);
-            cleanData = cleaned.image;
-          } catch (error) {
-            cleanupFailed = true;
-            warningCount += 1;
-            console.warn("page_cleanup_failed", pageNumber, error);
+          let lastError: unknown = null;
+          for (let attempt = 1; attempt <= 2; attempt += 1) {
+            try {
+              setStatus(`Sahifa ${pageNumber}/${pageImages.length}: AI cleanup (${attempt}/2)...`);
+              const cleaned = await cleanupPage(pageImages[index], blocks);
+              cleanData = cleaned.image;
+              lastError = null;
+              break;
+            } catch (error) {
+              lastError = error;
+              if (attempt === 1) {
+                setStatus(`Sahifa ${pageNumber}: cleanup qayta urinilmoqda...`);
+              }
+            }
+          }
+
+          if (lastError) {
+            throw new Error(
+              `Sahifa ${pageNumber} original yozuvlarini xavfsiz tozalab bo‘lmadi. Tarjima original matn ustiga yozilmaydi. ${lastError instanceof Error ? lastError.message : ""}`,
+            );
           }
         }
 
         const cleanedImage = await loadImage(cleanData);
-        const finalCanvas = drawTranslatedPage(
-          cleanedImage,
-          blocks,
-          cleanupFailed ? "CLEANUP WARNING" : undefined,
-        );
+        const finalCanvas = drawTranslatedPage(cleanedImage, blocks);
 
         if (index > 0) {
           pdf.addPage([finalCanvas.width, finalCanvas.height], finalCanvas.width >= finalCanvas.height ? "landscape" : "portrait");
@@ -561,11 +608,7 @@ export default function Home() {
       URL.revokeObjectURL(url);
 
       setProgress(100);
-      setQuality(
-        warningCount
-          ? `Tayyor. ${warningCount} sahifada AI cleanup fallback ishladi — tekshirish tavsiya qilinadi.`
-          : "QA: sahifalar tozalandi, tarjima joylashtirildi va PDF eksport qilindi.",
-      );
+      setQuality("QA: original yozuvlar cleanup mask orqali olib tashlandi, so‘ng tarjima joylashtirildi va PDF eksport qilindi.");
       setStatus("Professional tarjima PDF tayyor.");
     } catch (error) {
       setStatus(
