@@ -442,8 +442,11 @@ export async function POST(request: Request) {
 
     const prompt = `You are a professional manga/manhwa OCR and translator.
 
-The attached PDF contains ORIGINAL pages ${startPage} through ${endPage}.
-Translate only those pages into ${targetLanguage}.
+The attached PDF is a batch extracted from an ORIGINAL PDF.
+The first attached page is ORIGINAL PDF page ${startPage}.
+The last attached page is ORIGINAL PDF page ${endPage}.
+If there are multiple attached pages, their original numbers increase sequentially from ${startPage}.
+Translate only these original pages into ${targetLanguage}.
 
 Return ONLY valid JSON matching this exact shape:
 {
@@ -478,7 +481,7 @@ Return ONLY valid JSON matching this exact shape:
 }
 
 IMPORTANT:
-- "page" must be the ORIGINAL PDF page number, from ${startPage} to ${endPage}.
+- "page" MUST be the ORIGINAL PDF page number, not the position inside the attached batch. For example, the first attached page must be page ${startPage}, the second must be page ${Math.min(startPage + 1, endPage)}.
 - box_2d uses 0-1000 normalized coordinates: [top, left, bottom, right].
 - Detect every readable dialogue, thought, narration, SFX, sign, background, vertical, and rotated text block.
 - Return a tight polygon_2d around the actual lettering when possible, plus a conservative box_2d around it.
