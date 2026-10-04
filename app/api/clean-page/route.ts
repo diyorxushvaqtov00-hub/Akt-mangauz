@@ -120,7 +120,7 @@ __REGIONS__
               { type: "image", mime_type: mask.mimeType, data: mask.data },
               { type: "text", text: finalPrompt },
             ],
-            response_format: { type: "image", mime_type: "image/png", image_size: "2K" },
+            response_format: { type: "image", mime_type: "image/jpeg", image_size: "2K" },
           }),
         },
       );
@@ -161,7 +161,7 @@ __REGIONS__
 
       return NextResponse.json({
         ok: true,
-        image: `data:image/png;base64,${outputImage}`,
+        image: `data:image/jpeg;base64,${outputImage}`,
         model: "gemini-3.1-flash-image",
       });
     } finally {
