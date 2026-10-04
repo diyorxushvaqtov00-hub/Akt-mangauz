@@ -150,7 +150,7 @@ async function loadImage(dataUrl: string): Promise<HTMLImageElement> {
 async function renderPdfPages(file: File) {
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
   const bytes = new Uint8Array(await file.arrayBuffer());
-  const pdf = await pdfjs.getDocument({ data: bytes, disableWorker: true }).promise;
+  const pdf = await pdfjs.getDocument({ data: bytes }).promise;
   const pages: string[] = [];
 
   for (let index = 1; index <= pdf.numPages; index += 1) {
