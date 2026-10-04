@@ -149,6 +149,7 @@ async function loadImage(dataUrl: string): Promise<HTMLImageElement> {
 
 async function renderPdfPages(file: File) {
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  pdfjs.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/legacy/build/pdf.worker.mjs", import.meta.url).toString();
   const bytes = new Uint8Array(await file.arrayBuffer());
   const pdf = await pdfjs.getDocument({ data: bytes }).promise;
   const pages: string[] = [];
