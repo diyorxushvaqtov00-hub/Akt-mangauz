@@ -10,6 +10,11 @@ type Block = {
   source: string;
   translation: string;
   box_2d: number[];
+  background_color?: string;
+  text_color?: string;
+  font_weight?: "normal" | "bold";
+  align?: "left" | "center" | "right";
+  font_scale?: number;
 };
 
 type Layout = {
