@@ -18,7 +18,7 @@ export async function POST(request: Request) {
     const path = "jobs/" + id + "/source/" + safeName;
 
     const { error: jobError } = await supabaseAdmin.from("translation_jobs").insert({
-      id, source_path: path, source_name: name, target_language: "Uzbek", status: "uploaded",
+      id, filename: name, source_path: path, source_name: name, target_language: "Uzbek", status: "uploaded",
     });
     if (jobError) return NextResponse.json({ error: "Job yaratilmadi.", details: jobError.message }, { status: 500 });
 
