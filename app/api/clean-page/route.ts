@@ -65,7 +65,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, image: body.image, skipped: true });
     }
 
-    const prompt = \`You are a professional manga/manhwa clean-up editor.
+    const prompt = `You are a professional manga/manhwa clean-up editor.
 
 EDIT ONLY THE ORIGINAL TEXT REGIONS listed below.
 
@@ -92,7 +92,7 @@ TARGET REGIONS:
 __REGIONS__
 
 Return ONE edited image of the same page with the same aspect ratio and composition.
-\`;
+`;
 
     const finalPrompt = prompt.replace("__REGIONS__", JSON.stringify(regions));
 
@@ -126,7 +126,7 @@ Return ONE edited image of the same page with the same aspect ratio and composit
         const message =
           data?.error?.message ||
           data?.error?.status ||
-          \`Gemini image edit HTTP \${response.status}\`;
+          `Gemini image edit HTTP ${response.status}`;
         return NextResponse.json(
           { error: message, retryable: response.status === 429 || response.status >= 500 },
           { status: response.status },
@@ -156,7 +156,7 @@ Return ONE edited image of the same page with the same aspect ratio and composit
 
       return NextResponse.json({
         ok: true,
-        image: \`data:image/png;base64,\${outputImage}\`,
+        image: `data:image/png;base64,${outputImage}`,
         model: "gemini-3.1-flash-image",
       });
     } finally {
