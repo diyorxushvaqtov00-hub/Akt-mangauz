@@ -6,6 +6,7 @@ export default function Home() {
   const [status,setStatus]=useState("PDF faylni tanlang");
   const [busy,setBusy]=useState(false);
   const [translation,setTranslation]=useState("");
+  const [jobId,setJobId]=useState("");
 
   async function startUpload() {
     if (!file || busy) return;
@@ -30,6 +31,7 @@ export default function Home() {
       if(!translate.ok) throw new Error(translateData.error || translateData.detail || "AI tarjima xatosi");
 
       setTranslation(translateData.translation || "");
+      setJobId(initData.jobId);
       setStatus("AI tarjima muvaffaqiyatli tugadi.");
     } catch(error) {
       setStatus(error instanceof Error ? "X "+error.message : "Upload/AI xatosi");
@@ -49,7 +51,18 @@ export default function Home() {
       </label>
       <div className={file?"status success":"status"}>{status}</div>
       <button className="primary" disabled={!file||busy} onClick={startUpload}>{busy?"AI ishlayapti...":file?"PDF'ni AI tarjimaga yuborish":"Avval PDF tanlang"}</button>
-      {translation && <div className="status success" style={{marginTop:16,textAlign:"left",whiteSpace:"pre-wrap",maxHeight:420,overflow:"auto"}}>{translation}</div>}
+      {translation && <>
+        <div className="status success" style={{marginTop:16,textAlign:"left",whiteSpace:"pre-wrap",maxHeight:420,overflow:"auto"}}>{translation}</div>
+        {jobId && <button className="primary" style={{marginTop:12}} onClick={async()=>{
+          const r=await fetch("/api/export",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({jobId})});
+          if(!r.ok){const d=await r.json().catch(()=>({}));setStatus("Export xatosi: "+(d.error||"noma'lum"));return;}
+          const blob=await r.blob();
+          const url=URL.createObjectURL(blob); const a=document.createElement("a");
+          a.href=url; a.download=(file?.name?.replace(/\\.pdf$/i,"")||"translated")+"_uzbek_translation.pdf";
+          document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+          setStatus("Tarjima PDF tayyor — yuklab olindi.");
+        }}>📄 Tarjima PDF'ni yuklab olish</button>}
+      </>}
     </section>
     <section className="pipeline">{[["01","PDF Upload","Faylni xavfsiz qabul qilish"],["02","AI Text Detection","PDF sahifalaridagi matnni o‘qish"],["03","AI Translation","O‘zbek tiliga kontekstli tarjima"],["04","PDF Export","Tarjima matnini original sahifalarga joylashtirish"]].map(([n,title,desc])=><article key={n}><span>{n}</span><h3>{title}</h3><p>{desc}</p></article>)}</section>
     <footer>AI Manga Translator • Translation core first</footer>
