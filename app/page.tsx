@@ -170,6 +170,7 @@ async function renderPdfPages(file: File) {
     context.fillRect(0, 0, canvas.width, canvas.height);
 
     await page.render({
+      canvas,
       canvasContext: context,
       viewport,
     }).promise;
