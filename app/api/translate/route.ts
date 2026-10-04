@@ -11,8 +11,8 @@ const GEMINI_MODELS = [
 ] as const;
 const OPENAI_MODEL = "gpt-5-mini";
 const MAX_PAGES_PER_BATCH = 2;
-const GEMINI_ATTEMPT_TIMEOUT_MS = 25_000;
-const OPENAI_ATTEMPT_TIMEOUT_MS = 25_000;
+const GEMINI_ATTEMPT_TIMEOUT_MS = 15_000;
+const OPENAI_ATTEMPT_TIMEOUT_MS = 20_000;
 
 type Block = {
   source: string;
@@ -276,7 +276,6 @@ async function fetchOpenAIOnce(
             },
           ],
         }],
-        temperature: 0.1,
       }),
     });
 
