@@ -23,6 +23,17 @@ function normalizeUzbek(text: string) {
     .replace(/–|—/g, "-");
 }
 
+function parseHexColor(value: unknown, fallback: [number, number, number]) {
+  if (typeof value !== "string") return rgb(...fallback);
+  const hex = value.trim().replace(/^#/, "");
+  if (!/^[0-9a-fA-F]{6}$/.test(hex)) return rgb(...fallback);
+  return rgb(
+    parseInt(hex.slice(0, 2), 16) / 255,
+    parseInt(hex.slice(2, 4), 16) / 255,
+    parseInt(hex.slice(4, 6), 16) / 255,
+  );
+}
+
 function wrapToWidth(text: string, font: any, size: number, maxWidth: number) {
   const words = normalizeUzbek(text).split(/\s+/);
   const lines: string[] = [];
@@ -41,8 +52,8 @@ function wrapToWidth(text: string, font: any, size: number, maxWidth: number) {
   return lines;
 }
 
-function fitText(text: string, font: any, boxWidth: number, boxHeight: number) {
-  let size = Math.max(7, Math.min(20, boxHeight * 0.28));
+function fitText(text: string, font: any, boxWidth: number, boxHeight: number, fontScale = 1) {
+  let size = Math.max(7, Math.min(28, boxHeight * 0.28 * Math.max(0.75, Math.min(1.35, fontScale))));
   let lines = wrapToWidth(text, font, size, Math.max(20, boxWidth - 8));
   const lineHeight = size * 1.18;
 
@@ -113,27 +124,56 @@ export async function POST(request: Request) {
         const boxHeight = yBottomFromTop - yTop;
         const y = height - yBottomFromTop;
 
+        // Fully cover the ORIGINAL lettering. The previous version used a semi-transparent
+        // white rectangle, which left original text visible and destroyed dark speech bubbles.
+        // Gemini now returns the detected bubble/panel colors so the replacement keeps the
+        // original light/dark appearance instead of forcing every block to white.
+        const backgroundColor = parseHexColor(block.background_color, [1, 1, 1]);
+        const textColor = parseHexColor(block.text_color, [0.05, 0.05, 0.06]);
+        const drawFont = block.font_weight === "bold" ? bold : font;
+        const pad = Math.max(2, Math.min(6, Math.min(boxWidth, boxHeight) * 0.04));
+        const fillX = Math.max(0, x - pad);
+        const fillY = Math.max(0, y - pad);
+        const fillWidth = Math.min(width - fillX, boxWidth + pad * 2);
+        const fillHeight = Math.min(height - fillY, boxHeight + pad * 2);
+
         page.drawRectangle({
-          x: Math.max(0, x - 3),
-          y: Math.max(0, y - 3),
-          width: Math.min(width - x + 3, boxWidth + 6),
-          height: Math.min(height - y + 3, boxHeight + 6),
-          color: rgb(1, 1, 1),
-          opacity: 0.96,
+          x: fillX,
+          y: fillY,
+          width: fillWidth,
+          height: fillHeight,
+          color: backgroundColor,
+          opacity: 1,
         });
 
-        const fitted = fitText(block.translation, font, boxWidth, boxHeight);
-        let textY = y + boxHeight - fitted.size - 2;
+        const fitted = fitText(
+          block.translation,
+          drawFont,
+          boxWidth,
+          boxHeight,
+          Number(block.font_scale) || 1,
+        );
+
+        const textBlockHeight = fitted.lines.length * fitted.lineHeight;
+        let textY = y + Math.max(0, (boxHeight + fitted.size) / 2 - textBlockHeight / 2);
 
         for (const line of fitted.lines) {
-          if (textY < y) break;
+          if (textY < y - 1) break;
+          const lineWidth = drawFont.widthOfTextAtSize(line, fitted.size);
+          const align = block.align || "left";
+          const textX =
+            align === "center"
+              ? x + Math.max(2, (boxWidth - lineWidth) / 2)
+              : align === "right"
+                ? x + Math.max(2, boxWidth - lineWidth - 2)
+                : x + 2;
+
           page.drawText(line, {
-            x: x + 4,
+            x: textX,
             y: textY,
             size: fitted.size,
-            font,
-            color: rgb(0.05, 0.05, 0.06),
-            maxWidth: boxWidth - 8,
+            font: drawFont,
+            color: textColor,
           });
           textY -= fitted.lineHeight;
         }
