@@ -115,7 +115,7 @@ function fitCanvasText(
   size = Math.max(12, size);
 
   while (size >= minSize) {
-    ctx.font = \`\${block.font_weight === "bold" ? "700" : "400"} \${size}px \${fontFamily(block.font_class)}\`;
+    ctx.font = `${block.font_weight === "bold" ? "700" : "400"} ${size}px ${fontFamily(block.font_class)}`;
     const lines = wrapCanvasText(ctx, block.translation, Math.max(20, width - 12));
     const lineSpacing = clamp(Number(block.line_spacing) || 1.15, 0.9, 1.5);
     const lineHeight = size * lineSpacing;
@@ -130,7 +130,7 @@ function fitCanvasText(
     size -= Math.max(1, size * 0.045);
   }
 
-  ctx.font = \`400 \${minSize}px \${fontFamily(block.font_class)}\`;
+  ctx.font = `400 ${minSize}px ${fontFamily(block.font_class)}`;
   return {
     size: minSize,
     lines: wrapCanvasText(ctx, block.translation, Math.max(20, width - 8)),
@@ -194,7 +194,7 @@ async function cleanupPage(image: string, blocks: Block[]) {
     throw new Error(
       result.data?.error ||
         result.raw ||
-        \`Sahifani tozalash xatosi (HTTP \${response.status})\`,
+        `Sahifani tozalash xatosi (HTTP ${response.status})`,
     );
   }
 
@@ -240,7 +240,7 @@ function drawTranslatedPage(
     ctx.translate(x + width / 2, y + height / 2);
     ctx.rotate((rotation * Math.PI) / 180);
 
-    ctx.font = \`\${block.font_weight === "bold" ? "700" : "400"} \${fitted.size}px \${fontFamily(block.font_class)}\`;
+    ctx.font = `${block.font_weight === "bold" ? "700" : "400"} ${fitted.size}px ${fontFamily(block.font_class)}`;
     ctx.textBaseline = "middle";
     ctx.textAlign =
       block.align === "right"
@@ -263,7 +263,7 @@ function drawTranslatedPage(
 
       const shadowOpacity = clamp(Number(block.shadow_opacity) || 0, 0, 1);
       if (shadowOpacity > 0) {
-        ctx.shadowColor = \`rgba(\${shadow[0]},\${shadow[1]},\${shadow[2]},\${shadowOpacity})\`;
+        ctx.shadowColor = `rgba(${shadow[0]},${shadow[1]},${shadow[2]},${shadowOpacity})`;
         ctx.shadowBlur = Math.max(1, fitted.size * 0.08);
         ctx.shadowOffsetX = fitted.size * 0.04;
         ctx.shadowOffsetY = fitted.size * 0.04;
@@ -272,11 +272,11 @@ function drawTranslatedPage(
       if ((Number(block.stroke_width) || 0) > 0) {
         ctx.lineJoin = "round";
         ctx.lineWidth = Math.max(1, Number(block.stroke_width) || 0);
-        ctx.strokeStyle = \`rgb(\${sr},\${sg},\${sb})\`;
+        ctx.strokeStyle = `rgb(${sr},${sg},${sb})`;
         ctx.strokeText(line, textX, lineY);
       }
 
-      ctx.fillStyle = \`rgb(\${r},\${g},\${b})\`;
+      ctx.fillStyle = `rgb(${r},${g},${b})`;
       ctx.fillText(line, textX, lineY);
 
       ctx.shadowColor = "transparent";
@@ -311,7 +311,7 @@ export default function Home() {
   const [quality, setQuality] = useState("");
 
   const selectedLabel = useMemo(
-    () => (file ? \`\${file.name} • \${(file.size / 1024 / 1024).toFixed(2)} MB\` : "PDF faylni shu yerga tanlang"),
+    () => (file ? `${file.name} • ${(file.size / 1024 / 1024).toFixed(2)} MB` : "PDF faylni shu yerga tanlang"),
     [file],
   );
 
@@ -356,7 +356,7 @@ export default function Home() {
       if (!upload.ok) {
         throw new Error(
           (await upload.text().catch(() => "")) ||
-            \`PDF Storage'ga yuklanmadi (HTTP \${upload.status})\`,
+            `PDF Storage'ga yuklanmadi (HTTP ${upload.status})`,
         );
       }
 
@@ -405,7 +405,7 @@ export default function Home() {
         let translateData = translateResult.data as TranslationResponse;
 
         if (!translate.ok && batchEnd !== batchStart) {
-          setStatus(\`Sahifa \${batchStart} og‘ir — 1 sahifalik rejimga o‘tilmoqda...\`);
+          setStatus(`Sahifa ${batchStart} og‘ir — 1 sahifalik rejimga o‘tilmoqda...`);
           ({ response: translate, result: translateResult } = await runBatch(batchStart));
           translateData = translateResult.data as TranslationResponse;
         }
@@ -415,7 +415,7 @@ export default function Home() {
             translateData.detail ||
               translateData.error ||
               translateResult.raw ||
-              \`AI tarjima xatosi (HTTP \${translate.status})\`,
+              `AI tarjima xatosi (HTTP ${translate.status})`,
           );
         }
 
@@ -433,7 +433,7 @@ export default function Home() {
       setTranslation(finalTranslation);
       setJobId(initData.jobId);
       setProgress(70);
-      setStatus(\`Tarjima tayyor: \${totalPages}/\${totalPages} sahifa. Endi professional tozalash va typesetting...\`);
+      setStatus(`Tarjima tayyor: ${totalPages}/${totalPages} sahifa. Endi professional tozalash va typesetting...`);
 
       const layoutResponse = await fetch("/api/translate", {
         method: "POST",
@@ -452,7 +452,7 @@ export default function Home() {
       setProgress(72);
       setStatus("PDF sahifalari telefonda render qilinmoqda...");
     } catch (error) {
-      setStatus(error instanceof Error ? \`Xato: \${error.message}\` : "Upload/AI xatosi");
+      setStatus(error instanceof Error ? `Xato: ${error.message}` : "Upload/AI xatosi");
     } finally {
       setBusy(false);
     }
@@ -497,7 +497,7 @@ export default function Home() {
 
       for (let index = 0; index < pageImages.length; index += 1) {
         const pageNumber = index + 1;
-        setStatus(\`Sahifa \${pageNumber}/\${pageImages.length}: original matn tozalanmoqda...\`);
+        setStatus(`Sahifa ${pageNumber}/${pageImages.length}: original matn tozalanmoqda...`);
         setProgress(72 + Math.round((index / Math.max(1, pageImages.length)) * 24));
 
         const original = await loadImage(pageImages[index]);
@@ -561,14 +561,14 @@ export default function Home() {
       setProgress(100);
       setQuality(
         warningCount
-          ? \`Tayyor. \${warningCount} sahifada AI cleanup fallback ishladi — tekshirish tavsiya qilinadi.\`
+          ? `Tayyor. ${warningCount} sahifada AI cleanup fallback ishladi — tekshirish tavsiya qilinadi.`
           : "QA: sahifalar tozalandi, tarjima joylashtirildi va PDF eksport qilindi.",
       );
       setStatus("Professional tarjima PDF tayyor.");
     } catch (error) {
       setStatus(
         error instanceof Error
-          ? \`Professional export xatosi: \${error.message}\`
+          ? `Professional export xatosi: ${error.message}`
           : "Professional export xatosi",
       );
     } finally {
@@ -633,7 +633,7 @@ export default function Home() {
               <span>Pipeline</span><span>{progress}%</span>
             </div>
             <div style={{ height: 8, background: "#211f2c", borderRadius: 99, overflow: "hidden", marginTop: 7 }}>
-              <div style={{ width: \`\${progress}%\`, height: "100%", background: "linear-gradient(90deg,#8b5cf6,#c4b5fd)", transition: "width .3s" }} />
+              <div style={{ width: `${progress}%`, height: "100%", background: "linear-gradient(90deg,#8b5cf6,#c4b5fd)", transition: "width .3s" }} />
             </div>
           </div>
         )}
