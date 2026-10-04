@@ -28,7 +28,7 @@ export default function Home() {
       setStatus("AI PDF'ni o‘qiyapti va tarjima qilmoqda...");
       const translate=await fetch("/api/translate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({jobId:initData.jobId,path:initData.path,targetLanguage:"Uzbek"})});
       const translateData=await translate.json();
-      if(!translate.ok) throw new Error(translateData.error || translateData.detail || "AI tarjima xatosi");
+      if(!translate.ok) throw new Error(translateData.detail || translateData.error || "AI tarjima xatosi");
 
       setTranslation(translateData.translation || "");
       setJobId(initData.jobId);
