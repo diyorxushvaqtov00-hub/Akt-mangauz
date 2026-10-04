@@ -65,7 +65,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, image: body.image, skipped: true });
     }
 
-    const prompt = `You are a professional manga/manhwa clean-up editor.
+    const prompt = `You are a PROFESSIONAL MANGA LETTERING REMOVAL / INPAINTING ENGINE. This is an image EDIT, not image generation.\n\nYou must actually remove the original letters from the specified regions. The returned image must visibly differ in those regions.\n\nYou are a professional manga/manhwa clean-up editor.
 
 EDIT ONLY THE ORIGINAL TEXT REGIONS listed below.
 
@@ -80,7 +80,7 @@ ABSOLUTE PROTECTION RULES:
 - Do NOT add new artwork.
 - Do NOT translate or insert any replacement text.
 - Do NOT leave any original readable lettering inside the listed regions.
-- Keep all pixels outside the original text regions visually unchanged.
+- Keep all pixels outside the original text regions visually unchanged.\n- Do not merely overlay, blur, fade, recolor, or cover the original letters. The original glyph pixels must be reconstructed away.\n- For white text on a dark bubble, keep the bubble dark and reconstruct the dark fill where the glyphs were.\n- For black text on white bubble/paper, reconstruct the white/light fill where the glyphs were.\n- For text over artwork, continue the surrounding line art, screentone, gradient, texture, or object behind the letters.\n- Never return the source image unchanged when valid target regions are supplied.
 - If a region is a speech bubble, preserve the bubble shape and its original fill color.
 - If a region is black/dark with white lettering, reconstruct the dark/black area and remove only the lettering.
 - If a region lies over artwork, reconstruct only the tiny area occupied by the lettering using the surrounding artwork.
@@ -115,7 +115,7 @@ Return ONE edited image of the same page with the same aspect ratio and composit
               { type: "image", mime_type: image.mimeType, data: image.data },
               { type: "text", text: finalPrompt },
             ],
-            response_format: { type: "image", mime_type: "image/png" },
+            response_format: { type: "image", mime_type: "image/png", image_size: "2K" },
           }),
         },
       );
