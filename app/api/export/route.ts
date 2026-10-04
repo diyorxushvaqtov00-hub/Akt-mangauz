@@ -145,7 +145,7 @@ export async function POST(request: Request) {
       .replace(/\.pdf$/i, "")
       .replace(/[^a-zA-Z0-9_-]+/g, "_");
 
-    return new Response(bytes, {
+    return new Response(bytes as BodyInit, {
       headers: {
         "Content-Type": "application/pdf",
         "Content-Disposition": `attachment; filename="${safeName}_uzbek_manga.pdf"`,
