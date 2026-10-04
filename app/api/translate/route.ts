@@ -5,9 +5,14 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 export const maxDuration = 60;
 
 const BUCKET = "manga-files";
-const GEMINI_MODEL = "gemini-3.8-flash";
+const GEMINI_MODELS = [
+  "gemini-3.8-flash",
+  "gemini-3.7-flash",
+  "gemini-3.6-flash",
+] as const;
 const MAX_PAGES_PER_BATCH = 2;
-const GEMINI_TIMEOUT_MS = 50_000;
+const GEMINI_ATTEMPT_TIMEOUT_MS = 15_000;
+const GEMINI_RETRY_DELAY_MS = 2_000;
 
 type Block = {
   source: string;
@@ -56,17 +61,42 @@ function parseGeminiJson(text: string): Layout {
   return { pages };
 }
 
-async function fetchGemini(
+function isTransientGeminiError(status: number, message: string) {
+  const normalized = message.toLowerCase();
+  return (
+    status === 408 ||
+    status === 409 ||
+    status === 429 ||
+    status === 500 ||
+    status === 502 ||
+    status === 503 ||
+    status === 504 ||
+    normalized.includes("high demand") ||
+    normalized.includes("overloaded") ||
+    normalized.includes("temporarily unavailable") ||
+    normalized.includes("try again later") ||
+    normalized.includes("rate limit") ||
+    normalized.includes("resource exhausted")
+  );
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function fetchGeminiOnce(
   apiKey: string,
+  model: string,
   pdfBase64: string,
   prompt: string,
+  timeoutMs: number,
 ) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -92,14 +122,18 @@ async function fetchGemini(
       },
     );
 
-    const data = await response.json();
+    const data = await response.json().catch(() => null);
 
     if (!response.ok) {
-      throw new Error(
+      const message =
         data?.error?.message ||
         data?.error?.status ||
-        `Gemini API HTTP ${response.status}`,
-      );
+        `Gemini API HTTP ${response.status}`;
+      const error = new Error(message);
+      (error as Error & { status?: number; retryable?: boolean }).status = response.status;
+      (error as Error & { status?: number; retryable?: boolean }).retryable =
+        isTransientGeminiError(response.status, message);
+      throw error;
     }
 
     const text = data?.candidates?.[0]?.content?.parts
@@ -114,14 +148,60 @@ async function fetchGemini(
     return text;
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
-      throw new Error(
-        "Gemini javobi 50 soniyada kelmadi. Batch kichraytirilishi yoki qayta urinilishi kerak.",
+      const timeoutError = new Error(
+        `Gemini ${model} javobi ${Math.round(timeoutMs / 1000)} soniyada kelmadi.`,
       );
+      (timeoutError as Error & { retryable?: boolean }).retryable = true;
+      throw timeoutError;
     }
     throw error;
   } finally {
     clearTimeout(timer);
   }
+}
+
+async function fetchGemini(
+  apiKey: string,
+  pdfBase64: string,
+  prompt: string,
+) {
+  const failures: string[] = [];
+
+  for (let index = 0; index < GEMINI_MODELS.length; index += 1) {
+    const model = GEMINI_MODELS[index];
+    const timeoutMs = index === 0
+      ? GEMINI_ATTEMPT_TIMEOUT_MS
+      : 10_000;
+
+    try {
+      return await fetchGeminiOnce(
+        apiKey,
+        model,
+        pdfBase64,
+        prompt,
+        timeoutMs,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown Gemini error";
+      const retryable = error instanceof Error
+        ? Boolean((error as Error & { retryable?: boolean }).retryable)
+        : false;
+
+      failures.push(`${model}: ${message}`);
+
+      if (!retryable) {
+        throw error;
+      }
+
+      if (index < GEMINI_MODELS.length - 1) {
+        await sleep(GEMINI_RETRY_DELAY_MS);
+      }
+    }
+  }
+
+  throw new Error(
+    `Gemini barcha fallback modellarida vaqtinchalik xatoga uchradi. ${failures.join(" | ")}`,
+  );
 }
 
 export async function POST(request: Request) {
