@@ -65,29 +65,72 @@ export default function Home() {
         throw new Error(completeData.error || completeResult.raw || "Tekshiruv xatosi");
       }
 
-      setStatus("AI PDF'ni o‘qiyapti va tarjima qilmoqda...");
-      const translate=await fetch("/api/translate",{
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({
-          jobId:initData.jobId,
-          path:initData.path,
-          targetLanguage:"Uzbek"
-        })
-      });
-      const translateResult=await readResponse(translate);
-      const translateData=translateResult.data as {error?:string;detail?:string;translation?:string};
+      setStatus("AI PDF'ni sahifalar bo‘yicha tarjima qilmoqda...");
 
-      if(!translate.ok) {
-        throw new Error(
-          translateData.detail ||
-          translateData.error ||
-          translateResult.raw ||
-          `AI tarjima xatosi (HTTP ${translate.status})`
-        );
+      let nextPage = 1;
+      let totalPages = 0;
+      let finalTranslation = "";
+
+      while (nextPage) {
+        const batchStart = nextPage;
+        let batchEnd = batchStart + 1;
+
+        async function runBatch(endPage: number) {
+          const response = await fetch("/api/translate",{
+            method:"POST",
+            headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({
+              jobId:initData.jobId,
+              path:initData.path,
+              targetLanguage:"Uzbek",
+              startPage:batchStart,
+              endPage
+            })
+          });
+          const result = await readResponse(response);
+          return { response, result };
+        }
+
+        let { response: translate, result: translateResult } = await runBatch(batchEnd);
+        let translateData = translateResult.data as {
+          error?:string;
+          detail?:string;
+          translation?:string;
+          totalPages?:number;
+          nextPage?:number|null;
+          done?:boolean;
+        };
+
+        // Agar ikki sahifalik batch juda sekin/katta bo‘lsa,
+        // shu batchni avtomatik ravishda bitta sahifaga tushiramiz.
+        if(!translate.ok && batchEnd !== batchStart) {
+          setStatus(`Sahifa ${batchStart} og‘ir — bitta sahifa rejimida qayta urinilmoqda...`);
+          ({ response: translate, result: translateResult } = await runBatch(batchStart));
+          translateData = translateResult.data as typeof translateData;
+        }
+
+        if(!translate.ok) {
+          throw new Error(
+            translateData.detail ||
+            translateData.error ||
+            translateResult.raw ||
+            `AI tarjima xatosi (HTTP ${translate.status})`
+          );
+        }
+
+        totalPages = Number(translateData.totalPages || totalPages);
+        finalTranslation = String(translateData.translation || "");
+
+        if (translateData.done) {
+          nextPage = 0;
+          setStatus(`AI tarjima tugadi: ${totalPages}/${totalPages} sahifa.`);
+        } else {
+          nextPage = Number(translateData.nextPage || 0);
+          setStatus(`AI tarjima qilmoqda: ${Math.min(batchEnd,totalPages)}/${totalPages} sahifa...`);
+        }
       }
 
-      setTranslation(translateData.translation || "");
+      setTranslation(finalTranslation);
       setJobId(initData.jobId);
       setStatus("AI tarjima muvaffaqiyatli tugadi.");
     } catch(error) {
