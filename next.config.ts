@@ -1,3 +1,7 @@
 import type { NextConfig } from "next";
-const nextConfig: NextConfig = { experimental: { typedRoutes: true } };
+
+const nextConfig: NextConfig = {
+  typedRoutes: true,
+};
+
 export default nextConfig;
