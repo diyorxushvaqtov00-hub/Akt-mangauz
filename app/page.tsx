@@ -465,22 +465,7 @@ export default function Home() {
     setProgress(72);
 
     try {
-      const [pageImages, jobResponse] = await Promise.all([
-        renderPdfPages(file),
-        fetch("/api/translate", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            jobId,
-            path: "",
-            targetLanguage: "Uzbek",
-            startPage: 1,
-            endPage: 1,
-          }),
-        }).catch(() => null),
-      ]);
-
-      void jobResponse;
+      const pageImages = await renderPdfPages(file);
 
       const jobDataResponse = await fetch("/api/job-layout", {
         method: "POST",
