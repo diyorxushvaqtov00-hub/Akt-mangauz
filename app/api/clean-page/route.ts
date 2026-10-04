@@ -25,10 +25,15 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     const image = normalizeImageInput(body?.image);
+    const mask = normalizeImageInput(body?.mask);
     const blocks = Array.isArray(body?.blocks) ? body.blocks as CleanBlock[] : [];
 
     if (!image) {
       return NextResponse.json({ error: "Valid page image kerak." }, { status: 400 });
+    }
+
+    if (!mask) {
+      return NextResponse.json({ error: "Cleanup mask kerak." }, { status: 400 });
     }
 
     if (!blocks.length) {
@@ -65,33 +70,32 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, image: body.image, skipped: true });
     }
 
-    const prompt = `You are a PROFESSIONAL MANGA LETTERING REMOVAL / INPAINTING ENGINE. This is an image EDIT, not image generation.\n\nYou must actually remove the original letters from the specified regions. The returned image must visibly differ in those regions.\n\nYou are a professional manga/manhwa clean-up editor.
+    const prompt = `You are a professional manga lettering removal and inpainting engine. Perform a REAL image edit, not a new illustration.
 
-EDIT ONLY THE ORIGINAL TEXT REGIONS listed below.
+INPUTS:
+- IMAGE 1 is the original manga page.
+- IMAGE 2 is a binary cleanup mask generated from the OCR regions.
+- In the mask, WHITE pixels are the ONLY editable regions. BLACK pixels are protected and MUST remain unchanged.
 
-Goal:
-1. Remove the original lettering completely.
-2. Reconstruct the exact background underneath the lettering.
-3. Preserve the original artwork as faithfully as possible.
+PRIMARY GOAL:
+Remove the original lettering completely from every WHITE mask region, reconstructing whatever artwork, bubble fill, screentone, gradient, or texture was behind the letters. Do not add any replacement text.
 
-ABSOLUTE PROTECTION RULES:
-- Do NOT redraw, restyle, sharpen, recolor, or reinterpret the page.
-- Do NOT change characters, faces, hair, clothes, objects, panel borders, speech-bubble shapes, lighting, shadows, textures, or composition.
-- Do NOT add new artwork.
-- Do NOT translate or insert any replacement text.
-- Do NOT leave any original readable lettering inside the listed regions.
-- Keep all pixels outside the original text regions visually unchanged.\n- Do not merely overlay, blur, fade, recolor, or cover the original letters. The original glyph pixels must be reconstructed away.\n- For white text on a dark bubble, keep the bubble dark and reconstruct the dark fill where the glyphs were.\n- For black text on white bubble/paper, reconstruct the white/light fill where the glyphs were.\n- For text over artwork, continue the surrounding line art, screentone, gradient, texture, or object behind the letters.\n- Never return the source image unchanged when valid target regions are supplied.
-- If a region is a speech bubble, preserve the bubble shape and its original fill color.
-- If a region is black/dark with white lettering, reconstruct the dark/black area and remove only the lettering.
-- If a region lies over artwork, reconstruct only the tiny area occupied by the lettering using the surrounding artwork.
-- Preserve halftone dots, line art, gradients, and texture whenever possible.
+MASK RULES:
+- Treat the WHITE mask as authoritative. Edit only inside white pixels.
+- Do not edit, redraw, sharpen, recolor, crop, resize, or reinterpret any BLACK mask area.
+- Never ignore the mask and never use the whole page as an editable region.
+- The mask includes complete OCR text boxes/polygons, so remove ALL original glyphs inside those white regions.
+- Do not blur, fade, paint over, or lower opacity of the original letters. The original glyph shapes must be reconstructed away.
+- For white lettering on a dark bubble, reconstruct the same dark bubble fill.
+- For black lettering on a white/light bubble or page, reconstruct the surrounding white/light fill.
+- For lettering over line art, continue the exact nearby line art through the removed glyph area.
+- Preserve halftone dots, screentones, gradients, panel borders, characters, faces, hair, clothing, objects, lighting, shadows, and composition.
+- Do not translate, typeset, or insert Uzbek text.
+- Keep the exact page aspect ratio and composition.
+- Return one edited image.
 
-The normalized coordinates use [top, left, bottom, right], each from 0 to 1000.
-
-TARGET REGIONS:
+TARGET REGIONS (for semantic context only; the mask is authoritative):
 __REGIONS__
-
-Return ONE edited image of the same page with the same aspect ratio and composition.
 `;
 
     const finalPrompt = prompt.replace("__REGIONS__", JSON.stringify(regions));
@@ -113,6 +117,7 @@ Return ONE edited image of the same page with the same aspect ratio and composit
             model: "gemini-3.1-flash-image",
             input: [
               { type: "image", mime_type: image.mimeType, data: image.data },
+              { type: "image", mime_type: mask.mimeType, data: mask.data },
               { type: "text", text: finalPrompt },
             ],
             response_format: { type: "image", mime_type: "image/png", image_size: "2K" },
